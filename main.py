@@ -17,6 +17,94 @@ def cached_geocode(city_name: str):
 st.set_page_config(page_title="EV Trip Planner", layout="wide")
 st.title("⚡ AI-Driven EV Trip Planner")
 
+# ==========================================
+# EXHAUSTIVE INDIAN EV MASTER DATABASE (2026)
+# ==========================================
+# Standardized on: Usable Battery Capacity (kWh) and Calibrated Hwy Efficiency (Wh/km)
+indian_ev_universe = {
+    "Custom / Manual Profile": {"battery": 60.0, "efficiency": 150, "claimed": "Variable"},
+    
+    # Audi
+    "Audi e-tron GT": {"battery": 83.7, "efficiency": 190, "claimed": "500 km (WLTP)"},
+    "Audi Q8 e-tron 50": {"battery": 89.0, "efficiency": 220, "claimed": "491 km (WLTP)"},
+    "Audi Q8 e-tron 55": {"battery": 106.0, "efficiency": 230, "claimed": "582 km (WLTP)"},
+    
+    # BMW
+    "BMW i4 eDrive40": {"battery": 80.7, "efficiency": 165, "claimed": "590 km (WLTP)"},
+    "BMW i7 xDrive60": {"battery": 101.7, "efficiency": 210, "claimed": "625 km (WLTP)"},
+    "BMW iX xDrive50": {"battery": 105.2, "efficiency": 225, "claimed": "611 km (WLTP)"},
+    "BMW iX1 xDrive30": {"battery": 66.4, "efficiency": 180, "claimed": "439 km (WLTP)"},
+    
+    # BYD
+    "BYD Atto 3": {"battery": 60.5, "efficiency": 150, "claimed": "521 km (ARAI)"},
+    "BYD Seal (Dynamic)": {"battery": 61.4, "efficiency": 142, "claimed": "510 km (NEDC)"},
+    "BYD Seal (Premium)": {"battery": 82.6, "efficiency": 155, "claimed": "650 km (NEDC)"},
+    "BYD Sealion 7": {"battery": 82.6, "efficiency": 165, "claimed": "567 km (NEDC)"},
+    
+    # Citroen
+    "Citroen eC3": {"battery": 29.2, "efficiency": 135, "claimed": "320 km (ARAI)"},
+    
+    # Hyundai
+    "Hyundai Creta EV (Medium Range)": {"battery": 42.0, "efficiency": 140, "claimed": "390 km (MIDC)"},
+    "Hyundai Creta EV (Long Range)": {"battery": 51.4, "efficiency": 148, "claimed": "510 km (MIDC)"},
+    "Hyundai IONIQ 5": {"battery": 72.6, "efficiency": 155, "claimed": "631 km (ARAI)"},
+    
+    # Kia
+    "Kia EV6 (RWD)": {"battery": 77.4, "efficiency": 155, "claimed": "708 km (ARAI)"},
+    "Kia EV9": {"battery": 99.8, "efficiency": 215, "claimed": "561 km (WLTP)"},
+    
+    # Mahindra
+    "Mahindra BE 6 (59 kWh)": {"battery": 59.0, "efficiency": 160, "claimed": "557 km (MIDC)"},
+    "Mahindra BE 6 (79 kWh)": {"battery": 79.0, "efficiency": 170, "claimed": "683 km (MIDC)"},
+    "Mahindra XEV 9s (59 kWh)": {"battery": 59.0, "efficiency": 165, "claimed": "521 km (MIDC)"},
+    "Mahindra XEV 9s (70 kWh)": {"battery": 70.0, "efficiency": 170, "claimed": "600 km (MIDC)"},
+    "Mahindra XEV 9s (79 kWh)": {"battery": 79.0, "efficiency": 175, "claimed": "679 km (MIDC)"},
+    "Mahindra XUV400 (34.5 kWh)": {"battery": 34.5, "efficiency": 145, "claimed": "375 km (MIDC)"},
+    "Mahindra XUV400 (39.4 kWh)": {"battery": 39.4, "efficiency": 150, "claimed": "456 km (MIDC)"},
+    
+    # Maruti Suzuki
+    "Maruti Suzuki e Vitara (49 kWh)": {"battery": 49.0, "efficiency": 145, "claimed": "440 km (MIDC)"},
+    "Maruti Suzuki e Vitara (61 kWh)": {"battery": 61.0, "efficiency": 152, "claimed": "543 km (MIDC)"},
+    
+    # Mercedes-Benz
+    "Mercedes EQB 350": {"battery": 66.5, "efficiency": 185, "claimed": "423 km (WLTP)"},
+    "Mercedes EQE SUV 500": {"battery": 90.6, "efficiency": 210, "claimed": "590 km (WLTP)"},
+    "Mercedes EQS Sedan 580": {"battery": 107.8, "efficiency": 195, "claimed": "857 km (ARAI)"},
+    
+    # MG
+    "MG Comet EV": {"battery": 17.3, "efficiency": 95, "claimed": "230 km (ARAI)"},
+    "MG Windsor EV (38 kWh)": {"battery": 38.0, "efficiency": 138, "claimed": "332 km (ARAI)"},
+    "MG Windsor EV (52.9 kWh)": {"battery": 52.9, "efficiency": 145, "claimed": "449 km (ARAI)"},
+    "MG ZS EV": {"battery": 50.3, "efficiency": 145, "claimed": "461 km (ARAI)"},
+    
+    # Porsche
+    "Porsche Taycan (Base)": {"battery": 82.3, "efficiency": 185, "claimed": "484 km (WLTP)"},
+    
+    # Rolls-Royce
+    "Rolls-Royce Spectre": {"battery": 102.0, "efficiency": 240, "claimed": "530 km (WLTP)"},
+    
+    # Tata
+    "Tata Curvv EV (45 kWh)": {"battery": 45.0, "efficiency": 140, "claimed": "502 km (MIDC)"},
+    "Tata Curvv EV (55 kWh)": {"battery": 55.0, "efficiency": 145, "claimed": "585 km (MIDC)"},
+    "Tata Harrier EV (65 kWh)": {"battery": 65.0, "efficiency": 170, "claimed": "538 km (MIDC)"},
+    "Tata Harrier EV (75 kWh)": {"battery": 75.0, "efficiency": 175, "claimed": "627 km (MIDC)"},
+    "Tata Nexon EV (30 kWh)": {"battery": 30.0, "efficiency": 135, "claimed": "325 km (MIDC)"},
+    "Tata Nexon EV (45 km/h)": {"battery": 45.0, "efficiency": 142, "claimed": "489 km (MIDC)"},
+    "Tata Punch EV (30 kWh)": {"battery": 30.0, "efficiency": 130, "claimed": "315 km (MIDC)"},
+    "Tata Punch EV (40 kWh)": {"battery": 40.0, "efficiency": 138, "claimed": "421 km (MIDC)"},
+    "Tata Tiago EV (19.2 kWh)": {"battery": 19.2, "efficiency": 115, "claimed": "250 km (MIDC)"},
+    "Tata Tiago EV (24 kWh)": {"battery": 24.0, "efficiency": 120, "claimed": "315 km (MIDC)"},
+    "Tata Tigor EV": {"battery": 26.0, "efficiency": 122, "claimed": "315 km (ARAI)"},
+    
+    # VinFast
+    "VinFast VF 6": {"battery": 59.6, "efficiency": 150, "claimed": "468 km (WLTP)"},
+    "VinFast VF 7": {"battery": 70.0, "efficiency": 162, "claimed": "532 km (WLTP)"},
+    
+    # Volvo
+    "Volvo XC40 Recharge": {"battery": 69.0, "efficiency": 180, "claimed": "505 km (WLTP)"},
+    "Volvo C40 Recharge": {"battery": 69.0, "efficiency": 175, "claimed": "530 km (WLTP)"}
+}
+
 # --- Sidebar Controls ---
 with st.sidebar:
     st.header("Trip Settings")
@@ -56,14 +144,47 @@ with st.sidebar:
     end_city = st.text_input("Destination City", value="Goa")
     
     st.markdown("---")
-    st.header("🚗 EV Configuration")
-    battery_capacity = st.number_input("Battery Capacity (kWh)", min_value=10.0, max_value=150.0, value=60.0, step=1.0)
-    wh_per_km = st.number_input("Efficiency (Wh/km)", min_value=50, max_value=400, value=150, step=5)
+    # ==========================================
+    # STREAMLIT UI SIDEBAR RENDER
+    # ==========================================
+    st.sidebar.title("🚗 Vehicle Profile Settings")
+    
+    # Dropdown ordered alphabetically by key
+    selected_vehicle = st.sidebar.selectbox(
+        "Select EV Model Preset Profile",
+        sorted(list(indian_ev_universe.keys()))
+    )
+    
+    # Pull matching dictionary specs
+    specs = indian_ev_universe[selected_vehicle]
+    
+    # Interactive sliders linking to database choices
+    battery_capacity = st.sidebar.slider(
+        "Battery Capacity (Gross/Usable kWh)", 
+        10.0, 120.0, 
+        float(specs["battery"]),
+        help="The total energy configuration your vehicle can store."
+    )
+    
+    efficiency = st.sidebar.slider(
+        "Highway Target Efficiency (Wh/km)", 
+        50, 300, 
+        int(specs["efficiency"]),
+        help="Energy consumption rate. Higher values represent aggressive highway speeds, high AC usage, or steep terrain."
+    )
+    
+    # Render context metadata underneath sliders
+    if selected_vehicle != "Custom / Manual Profile":
+        st.sidebar.info(f"**Official Claimed Range:** {specs['claimed']}")
+        st.sidebar.caption(
+            "💡 *Note: The highway efficiency baseline is dynamically safety-tuned for high-speed cruising (85-100 km/h) with active AC climate control.*"
+        )
+    
     reliability_toggle = st.toggle("Show Only High-Reliability Stations", value=True)
     safety_buffer = st.slider("Battery Safety Buffer (%)", min_value=5, max_value=30, value=15, step=1)
     
     # Dynamically compute range based on user inputs
-    usable_range_km = round((battery_capacity * 1000) / wh_per_km, 1)
+    usable_range_km = round((battery_capacity * 1000) / efficiency, 1)
     st.info(f"💡 Calculated Real-World Range: **{usable_range_km} km**")
     
     search_routes_button = st.button("🔍 Search Routes", use_container_width=True)
