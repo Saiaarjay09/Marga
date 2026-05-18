@@ -276,16 +276,9 @@ if "routes" in st.session_state and st.session_state["routes"]:
             
             st.success(f"🤖 AI Reasoning: {ai_insights['reasoning']}")
             
-            # Adjust range based on AI modifier
+            # AI Adjusted Range
             adjusted_range = usable_range_km * (1 + ai_insights['modifier'] / 100.0)
-            st.info(f"🔋 AI-adjusted range: {adjusted_range:.1f} km")
-            
-            # Real-World Physics Penalties
-            HIGHWAY_SPEED_PENALTY = 0.75   # 100+ km/h highway speeds + heavy AC usage
-            GHATS_ELEVATION_PENALTY = 0.85 # Western Ghats climb penalty for routes into Goa
-            
-            adjusted_range = adjusted_range * HIGHWAY_SPEED_PENALTY * GHATS_ELEVATION_PENALTY
-            st.warning(f"⚠️ Real-world range after highway & Ghats penalties: {adjusted_range:.1f} km (×0.75 speed, ×0.85 elevation)")
+            st.info(f"🔋 AI-adjusted base range: {adjusted_range:.1f} km (Dynamic speed/elevation physics applied per leg)")
             
             client = OpenChargeMapClient(api_key=ocm_api_key)
             
@@ -301,18 +294,27 @@ if "routes" in st.session_state and st.session_state["routes"]:
             
             # Run simulation using real geometry waypoints and pre-fetched chargers
             simulator = Simulator(client)
-            # The simulator needs [(lat, lng)]
-            route_tuples = [(pt[1], pt[0]) for pt in route_geometry]
+            # The simulator needs [(lat, lng)] or [(lat, lng, ele)]
+            route_tuples = []
+            for pt in route_geometry:
+                if len(pt) >= 3:
+                    route_tuples.append((pt[1], pt[0], pt[2]))
+                else:
+                    route_tuples.append((pt[1], pt[0]))
             
             # Convert safety buffer percentage to km
             safety_buffer_km = usable_range_km * (safety_buffer / 100.0)
+            
+            # Calculate dynamic target highway leg velocity
+            avg_speed = selected_route['distance_km'] / (selected_route['duration_mins'] / 60.0) if selected_route['duration_mins'] > 0 else 60
             
             result = simulator.simulate_trip(
                 route_tuples,
                 adjusted_range,
                 safety_buffer_km,
                 reliability_toggle,
-                pre_fetched_chargers=high_confidence_chargers
+                pre_fetched_chargers=high_confidence_chargers,
+                avg_speed_kmh=avg_speed
             )
             
             # Store result for rendering

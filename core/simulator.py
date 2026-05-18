@@ -15,157 +15,201 @@ class Simulator:
     def __init__(self, charger_client: OpenChargeMapClient):
         self.client = charger_client
 
-    def simulate_trip(self, route_geometry, adjusted_range, safety_buffer, reliability_toggle, pre_fetched_chargers=None):
+    def simulate_trip(self, route_geometry, adjusted_range, safety_buffer, reliability_toggle, pre_fetched_chargers=None, avg_speed_kmh=60.0):
         """
-        Drives the route kilometer-by-kilometer, dynamically tracking SOC.
-        Triggers search phase at 25% battery to mimic realistic driving behavior.
+        Greedy look-ahead algorithm with Soft Threshold Flex Buffer and Dynamic Route Physics.
+        1. Dynamic Range Check with 10% Soft Threshold and 5% Hard Floor.
+        2. Flex Evaluation: Reach beyond soft threshold for DC fast chargers if none exist within soft limit.
+        3. Break immediately if destination is reachable with 10% buffer.
         """
-        current_range = adjusted_range
-        # Dynamic 25% (1/4th Battery) Trigger Bias
-        search_trigger_range = adjusted_range * 0.25 
-        
-        total_distance = 0.0
-        stops = []
-        
         if not route_geometry:
             return {"status": "error", "message": "Empty route"}
 
-        current_pos = route_geometry[0]
+        stops = []
+        
+        # Define the thresholds based on vehicle's adjusted base range
+        hard_floor_km = adjusted_range * 0.05
+        soft_threshold_km = adjusted_range * 0.10
+        
+        # Calculate cumulative physical and effective (SoC drain) distances
+        physical_route_dists = [0.0]
+        effective_route_dists = [0.0]
         
         for i in range(1, len(route_geometry)):
-            next_pos = route_geometry[i]
-            segment_dist = haversine_distance(current_pos[0], current_pos[1], next_pos[0], next_pos[1])
-            dist_covered = 0.0
+            pos1 = route_geometry[i-1]
+            pos2 = route_geometry[i]
+            physical_dist = haversine_distance(pos1[0], pos1[1], pos2[0], pos2[1])
             
-            while dist_covered < segment_dist:
-                # Track dynamically kilometer-by-kilometer
-                increment = min(1.0, segment_dist - dist_covered)
-                current_range -= increment
-                total_distance += increment
-                dist_covered += increment
-                
-                # Interpolate position
-                ratio = dist_covered / segment_dist
-                lat = current_pos[0] + (next_pos[0] - current_pos[0]) * ratio
-                lng = current_pos[1] + (next_pos[1] - current_pos[1]) * ratio
-                
-                # Trigger Active Search Phase at 25% battery
-                if current_range <= search_trigger_range:
-                    chargers = []
-                    
-                    # Proactive Detour and Grid Expansion Logic
-                    # Search radiuses expanding up to 30km off-track
-                    search_radii = [10.0, 20.0, 30.0]
-                    used_radius = 10.0
-                    
-                    for radius in search_radii:
-                        if pre_fetched_chargers:
-                            current_radius_chargers = []
-                            for c in pre_fetched_chargers:
-                                c_lat = c["AddressInfo"]["Latitude"]
-                                c_lng = c["AddressInfo"]["Longitude"]
-                                if haversine_distance(lat, lng, c_lat, c_lng) <= radius:
-                                    current_radius_chargers.append(c)
-                            if current_radius_chargers:
-                                chargers = current_radius_chargers
-                                used_radius = radius
-                                break
-                        else:
-                            fetched = self.client.get_reliable_chargers(
-                                lat=lat, 
-                                lng=lng, 
-                                distance_km=radius, 
-                                require_recent_checkin=reliability_toggle
-                            )
-                            if fetched:
-                                chargers = fetched
-                                used_radius = radius
-                                break
-                    
-                    # Human Driver Compromise (Adaptive Buffering)
-                    # If nothing is found strictly within 30km, look ahead up to 100km total area.
-                    if not chargers:
-                        extended_radius = 100.0
-                        if pre_fetched_chargers:
-                            for c in pre_fetched_chargers:
-                                c_lat = c["AddressInfo"]["Latitude"]
-                                c_lng = c["AddressInfo"]["Longitude"]
-                                if haversine_distance(lat, lng, c_lat, c_lng) <= extended_radius:
-                                    chargers.append(c)
-                        else:
-                            chargers = self.client.get_reliable_chargers(
-                                lat=lat, 
-                                lng=lng, 
-                                distance_km=extended_radius, 
-                                require_recent_checkin=reliability_toggle
-                            )
-                            
-                    if not chargers:
-                        return {
-                            "status": "failed", 
-                            "message": f"Trip failed: Stranded! No verified chargers within 100km area at distance {total_distance:.1f}km.",
-                            "stops": stops
-                        }
-                    
-                    # Score and pick the best charger
-                    best_charger = None
-                    best_score = -999999
-                    
-                    for c in chargers:
-                        c_lat = c["AddressInfo"]["Latitude"]
-                        c_lng = c["AddressInfo"]["Longitude"]
-                        dist_to_c = haversine_distance(lat, lng, c_lat, c_lng)
-                        power = c.get("max_ccs2_power", 0)
-                        
-                        # We allow a slight dip into the safety buffer margin (e.g. going 5km beyond strictly available range)
-                        reachable_range = current_range + 5.0 
-                        if dist_to_c > reachable_range:
-                            continue # Physically unreachable
-                            
-                        is_high_speed = 1 if power >= 50 else 0
-                        
-                        # Prioritize high speed, then shortest detour
-                        score = (is_high_speed * 1000) - dist_to_c
-                        if score > best_score:
-                            best_score = score
-                            best_charger = (c, dist_to_c, power)
-                            
-                    if best_charger:
-                        c_data, dist_to_c, power = best_charger
-                        
-                        stop_info = {
-                            "charger": c_data,
-                            "distance_from_route": dist_to_c,
-                            "power_kw": power,
-                            "stopped_at_km": total_distance,
-                            "search_radius_used": used_radius
-                        }
-                        
-                        # Adjust battery consumption for the detour
-                        current_range -= dist_to_c
-                        
-                        if current_range < safety_buffer:
-                            soc_percent = (current_range / adjusted_range) * 100
-                            stop_info["note"] = f"Adaptive Buffering: Pushed through to {soc_percent:.1f}% SOC to reach superior high-speed hub."
-                        elif dist_to_c > 5.0:
-                            stop_info["note"] = f"Proactive Detour: Deviated {dist_to_c:.1f}km off-route to reach reliable station."
-                            
-                        stops.append(stop_info)
-                        
-                        # Recharge back to full (minus the detour distance returning to route)
-                        current_range = adjusted_range - dist_to_c
-                    else:
-                        return {
-                            "status": "failed",
-                            "message": f"Failed to select a reachable charger. Range left: {current_range:.1f}km.",
-                            "stops": stops
-                        }
-                        
-            current_pos = next_pos
+            # 1. Dynamic Speed Multiplier
+            speed_multiplier = 1.15 if avg_speed_kmh > 95 else 1.0
             
+            # 2. Geospatial Elevation Delta
+            elevation_multiplier = 1.0
+            if len(pos1) >= 3 and len(pos2) >= 3:
+                ele_gain = pos2[2] - pos1[2]
+                # +1.5% Wh/km for every 100 meters
+                elevation_multiplier += (ele_gain / 100.0) * 0.015
+                # Floor it at 0.5 to prevent infinite regeneration during steep descents
+                elevation_multiplier = max(0.5, elevation_multiplier)
+                
+            segment_efficiency_multiplier = speed_multiplier * elevation_multiplier
+            effective_dist = physical_dist * segment_efficiency_multiplier
+            
+            physical_route_dists.append(physical_route_dists[-1] + physical_dist)
+            effective_route_dists.append(effective_route_dists[-1] + effective_dist)
+        
+        total_physical_dist = physical_route_dists[-1]
+        total_effective_dist = effective_route_dists[-1]
+        
+        current_soc_range = adjusted_range
+        current_effective_route_km = 0.0
+        current_physical_route_km = 0.0
+        
+        charger_projections = []
+        if pre_fetched_chargers:
+            for c in pre_fetched_chargers:
+                c_lat = c["AddressInfo"]["Latitude"]
+                c_lng = c["AddressInfo"]["Longitude"]
+                
+                min_d = float('inf')
+                best_idx = 0
+                
+                # Project charger onto the closest point of the polyline
+                for i, pt in enumerate(route_geometry):
+                    d = haversine_distance(pt[0], pt[1], c_lat, c_lng)
+                    if d < min_d:
+                        min_d = d
+                        best_idx = i
+                        
+                best_physical_km = physical_route_dists[best_idx]
+                best_effective_km = effective_route_dists[best_idx]
+                
+                charger_projections.append({
+                    "charger": c,
+                    "route_km": best_physical_km,
+                    "effective_route_km": best_effective_km,
+                    "dist_off_route": min_d,
+                    "lat": c_lat,
+                    "lng": c_lng,
+                    "power_kw": c.get("max_ccs2_power", 0)
+                })
+
+        # Safeguard to prevent infinite loop
+        MAX_ITERATIONS = 100
+        iterations = 0
+
+        # Loop breaks immediately if we can reach the destination maintaining the 10% Soft Threshold
+        while current_effective_route_km + current_soc_range - soft_threshold_km < total_effective_dist:
+            iterations += 1
+            if iterations > MAX_ITERATIONS:
+                return {
+                    "status": "failed", 
+                    "message": "Trip failed: Infinite loop detected in routing.",
+                    "stops": stops
+                }
+                
+            standard_chargers = []
+            flex_chargers = []
+            
+            if charger_projections:
+                for cp in charger_projections:
+                    # Must be strictly ahead of us to ensure forward progress
+                    if cp["effective_route_km"] > current_effective_route_km + 1.0:
+                        dist_along_route_eff = cp["effective_route_km"] - current_effective_route_km
+                        
+                        # Detour costs apply the speed penalty too for consistency (ignoring elevation for off-route delta)
+                        eff_dist_off_route = cp["dist_off_route"] * (1.15 if avg_speed_kmh > 95 else 1.0)
+                        required_range = dist_along_route_eff + eff_dist_off_route
+                        remaining_range = current_soc_range - required_range
+                        
+                        is_dc_fast = cp["power_kw"] > 50
+                        
+                        if remaining_range >= soft_threshold_km:
+                            standard_chargers.append({
+                                "cp": cp,
+                                "required_range": required_range,
+                                "remaining_range_at_arrival": remaining_range,
+                                "is_dc_fast": is_dc_fast
+                            })
+                        elif hard_floor_km <= remaining_range < soft_threshold_km and is_dc_fast:
+                            flex_chargers.append({
+                                "cp": cp,
+                                "required_range": required_range,
+                                "remaining_range_at_arrival": remaining_range,
+                                "is_dc_fast": is_dc_fast
+                            })
+            else:
+                return {
+                    "status": "failed",
+                    "message": "Pre-fetched chargers array is empty or not provided. Look-ahead requires route chargers.",
+                    "stops": stops
+                }
+            
+            has_dc_fast_in_standard = any(c["is_dc_fast"] for c in standard_chargers)
+            
+            # Flex Window Evaluation
+            if not has_dc_fast_in_standard and flex_chargers:
+                pool = standard_chargers + flex_chargers
+            else:
+                pool = standard_chargers
+                
+            if not pool:
+                return {
+                    "status": "failed", 
+                    "message": f"Trip failed: Stranded! No reachable chargers found ahead before 5% hard floor limit. Reached {current_physical_route_km:.1f} physical km.",
+                    "stops": stops
+                }
+                
+            # Fast-Charger Prioritization
+            # Cluster in the final 30km (physical) of the evaluated pool
+            max_r_km = max(rc["cp"]["route_km"] for rc in pool)
+            zone_start = max_r_km - 30.0 
+            
+            final_zone_chargers = [rc for rc in pool if rc["cp"]["route_km"] >= zone_start]
+            if not final_zone_chargers:
+                final_zone_chargers = pool
+                
+            best_rc = None
+            best_score = -999999
+            for rc in final_zone_chargers:
+                power = rc["cp"]["power_kw"]
+                # Score heavily values power, then distance
+                score = (power * 10) + rc["cp"]["route_km"]
+                if score > best_score:
+                    best_score = score
+                    best_rc = rc
+                    
+            # Allocate optimal look-ahead stop
+            cp = best_rc["cp"]
+            
+            if best_rc in flex_chargers:
+                note = f"Flex Stop: Dipped into soft threshold (buffer {best_rc['remaining_range_at_arrival']:.1f} km) to reach >50kW DC Fast station. Charging to 85% SoC."
+            else:
+                note = f"Look-Ahead Stop: Arrived cleanly with {best_rc['remaining_range_at_arrival']:.1f} km buffer. Charging to 85% SoC."
+                
+            stop_info = {
+                "charger": cp["charger"],
+                "distance_from_route": cp["dist_off_route"],
+                "power_kw": cp["power_kw"],
+                "stopped_at_km": cp["route_km"],
+                "search_radius_used": 0.0,
+                "note": note
+            }
+            stops.append(stop_info)
+            
+            # Battery Reset
+            current_effective_route_km = cp["effective_route_km"]
+            current_physical_route_km = cp["route_km"]
+            
+            # Reset SoC to 85% due to DC fast charging curve slow-down
+            current_soc_range = adjusted_range * 0.85
+            # Deduct the cost of getting back on the route from the detour (effective)
+            eff_dist_off_route = cp["dist_off_route"] * (1.15 if avg_speed_kmh > 95 else 1.0)
+            current_soc_range -= eff_dist_off_route
+
         return {
             "status": "success",
             "message": "Trip completed successfully.",
-            "total_distance": total_distance,
+            "total_distance": total_physical_dist,
             "stops": stops
         }
