@@ -352,8 +352,6 @@ if "routes" in st.session_state and st.session_state["routes"]:
             # Filter chargers using AI Confidence Score > 85%
             high_confidence_chargers = optimizer.filter_high_confidence_chargers(all_chargers_on_route)
             
-            # Run simulation using real geometry waypoints and pre-fetched chargers
-            simulator = Simulator(None)
             # The simulator needs [(lat, lng)] or [(lat, lng, ele)]
             route_tuples = []
             for pt in route_geometry:
@@ -362,24 +360,46 @@ if "routes" in st.session_state and st.session_state["routes"]:
                 else:
                     route_tuples.append((pt[1], pt[0]))
             
-            # Convert safety buffer percentage to km
-            safety_buffer_km = usable_range_km * (safety_buffer / 100.0)
-            
-            # Calculate dynamic target highway leg velocity
-            avg_speed = selected_route['distance_km'] / (selected_route['duration_mins'] / 60.0) if selected_route['duration_mins'] > 0 else 60
-            
-            result = simulator.simulate_trip(
-                route_tuples,
-                adjusted_range,
-                safety_buffer_km,
-                reliability_toggle,
-                pre_fetched_chargers=high_confidence_chargers,
-                avg_speed_kmh=avg_speed
-            )
-            
-            # Store result for rendering
-            st.session_state["simulation_result"] = result
-            st.session_state["selected_geometry"] = route_geometry
+            if not high_confidence_chargers:
+                st.warning("⚠️ No Compatible DC Fast Chargers Detected on This Route.")
+                st.info("💡 **Developer Notice:** The temporary IONAGE sandbox demo environment may have restricted data access for this specific highway corridor. Grab a production developer API key from the IONAGE portal to scan all 29,000+ real-time Indian infrastructure points!")
+                st.stop()
+            elif not route_tuples:
+                st.error("Route geometry is empty or unparsed.")
+                st.stop()
+            else:
+                try:
+                    # Run simulation using real geometry waypoints and pre-fetched chargers
+                    simulator = Simulator(None)
+                    
+                    # Convert safety buffer percentage to km
+                    safety_buffer_km = usable_range_km * (safety_buffer / 100.0)
+                    
+                    # Calculate dynamic target highway leg velocity
+                    avg_speed = selected_route['distance_km'] / (selected_route['duration_mins'] / 60.0) if selected_route['duration_mins'] > 0 else 60
+                    
+                    result = simulator.simulate_trip(
+                        route_tuples,
+                        adjusted_range,
+                        safety_buffer_km,
+                        reliability_toggle,
+                        pre_fetched_chargers=high_confidence_chargers,
+                        avg_speed_kmh=avg_speed
+                    )
+                    
+                    # Store result for rendering
+                    st.session_state["simulation_result"] = result
+                    st.session_state["selected_geometry"] = route_geometry
+                except TypeError as e:
+                    import traceback
+                    print("--- TYPE ERROR IN SIMULATION ---")
+                    traceback.print_exc()
+                    st.info("⚠️ An optimization parameter mismatch occurred. Please toggle the Vehicle Profile sliders or safety buffer buffer state to re-initialize the baseline logic.")
+                except Exception as e:
+                    import traceback
+                    print("--- GENERAL EXCEPTION IN SIMULATION ---")
+                    traceback.print_exc()
+                    st.info("⚠️ An unexpected error occurred while planning your route. Please adjust your search settings or toggle the vehicle profile to retry.")
 
 # --- Render Map & Results ---
 if "simulation_result" in st.session_state and st.session_state["simulation_result"]:
