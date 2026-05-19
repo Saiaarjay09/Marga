@@ -2,16 +2,46 @@ import requests
 import streamlit as st
 import pydeck as pdk
 from streamlit_geolocation import streamlit_geolocation
-from api.chargers import OpenChargeMapClient
 from core.simulator import Simulator
 from api.routing import get_coords_from_city, get_osrm_route
 from core.ai_optimizer import AIOptimizer
-from api.charging import get_charging_stations
 
 @st.cache_data(show_spinner=False)
 def cached_geocode(city_name: str):
     """Cached wrapper around ArcGIS geocoder — never looks up the same city twice."""
     return get_coords_from_city(city_name)
+
+@st.cache_data(ttl=300)
+def fetch_highway_chargers(route_bounds=None):
+    """
+    Primary Data Provider: IONAGE Developer Network (India Hub)
+    Fetches real-time, verified public DC charging endpoints across Indian highway networks.
+    """
+    url = "https://api.ionage.in/v1/public/chargers/discover"
+    headers = {
+        "Accept": "application/json",
+        "X-API-Key": st.secrets.get("IONAGE_API_KEY", "DEMO_KEY_INDIA")
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            raw_data = response.json()
+            formatted_chargers = []
+            for item in raw_data.get("data", []):
+                formatted_chargers.append({
+                    "ID": item.get("id"),
+                    "AddressInfo": {
+                        "Title": item.get("name", "EV Fast Charger"),
+                        "Latitude": float(item.get("latitude")),
+                        "Longitude": float(item.get("longitude")),
+                        "AddressLine1": item.get("address", "Highway Corridor")
+                    },
+                    "Connections": [{"PowerKW": item.get("max_power_kw", 50)}]
+                })
+            return formatted_chargers
+        return []
+    except requests.exceptions.RequestException:
+        return []
 
 # --- UI Configuration ---
 st.set_page_config(page_title="EV Trip Planner", layout="wide")
@@ -110,12 +140,10 @@ with st.sidebar:
     st.header("Trip Settings")
     
     try:
-        ocm_api_key = st.secrets["OCM_API_KEY"]
         gemini_api_key = st.secrets.get("GEMINI_API_KEY", "")
         weather_api_key = st.secrets.get("OPENWEATHER_API_KEY", "")
     except FileNotFoundError:
         st.warning("Secrets file not found. Please set your Streamlit secrets.")
-        ocm_api_key = ""
         gemini_api_key = ""
         weather_api_key = ""
         
@@ -197,9 +225,7 @@ if search_routes_button:
     st.session_state.pop('simulation_result', None)
     st.session_state.pop('chargers', None)
     
-    if not ocm_api_key:
-        st.warning("Please configure your Open Charge Map API Key in Streamlit Secrets.")
-    elif not start_city or not end_city:
+    if not start_city or not end_city:
         st.warning("Please enter both a start point and a destination.")
     else:
         with st.spinner("Processing route and loading verified charging networks..."):
@@ -221,8 +247,8 @@ if search_routes_button:
                     st.session_state["routes"] = routes
                     st.session_state["selected_route"] = routes[0]
                     
-                    # Call charger engine using the custom user range!
-                    chargers = get_charging_stations(start_lat, start_lng, usable_range_km, ocm_api_key)
+                    # Call charger engine
+                    chargers = fetch_highway_chargers()
                     st.session_state["chargers"] = chargers
                     
                     st.success("Route and verified chargers loaded successfully!")
@@ -280,20 +306,54 @@ if "routes" in st.session_state and st.session_state["routes"]:
             adjusted_range = usable_range_km * (1 + ai_insights['modifier'] / 100.0)
             st.info(f"🔋 AI-adjusted base range: {adjusted_range:.1f} km (Dynamic speed/elevation physics applied per leg)")
             
-            client = OpenChargeMapClient(api_key=ocm_api_key)
+            # Dynamic Charger Discovery: Route Snapping using IONAGE Engine
+            all_chargers = fetch_highway_chargers()
             
-            # Dynamic Charger Discovery: Route Snapping
-            all_chargers_on_route = client.get_chargers_along_route(
-                route_geometry, 
-                corridor_km=10, 
-                require_recent_checkin=reliability_toggle
-            )
+            # Helper to calculate distance
+            def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+                import math
+                R = 6371.0 # Earth radius in km
+                dLat = math.radians(lat2 - lat1)
+                dLon = math.radians(lon2 - lon1)
+                a = math.sin(dLat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dLon/2)**2
+                c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+                return R * c
+
+            all_chargers_on_route = []
+            for charger in all_chargers:
+                addr_info = charger.get("AddressInfo", {})
+                c_lat = addr_info.get("Latitude")
+                c_lng = addr_info.get("Longitude")
+                if c_lat is None or c_lng is None:
+                    continue
+                
+                # Check distance to any point along the route geometry
+                min_dist = float('inf')
+                for pt in route_geometry:
+                    pt_lat = pt[1]
+                    pt_lng = pt[0]
+                    d = haversine_distance(c_lat, c_lng, pt_lat, pt_lng)
+                    if d < min_dist:
+                        min_dist = d
+                
+                # Snapping threshold (corridor_km = 10)
+                if min_dist <= 10.0:
+                    power = 50
+                    conns = charger.get("Connections", [])
+                    if conns:
+                        power = conns[0].get("PowerKW", 50)
+                    
+                    # Ensure compatibility with both AI Optimizer and Simulator
+                    charger["max_ccs2_power"] = power
+                    charger["UserComments"] = []
+                    charger["OperatorInfo"] = {"Title": "IONAGE"}
+                    all_chargers_on_route.append(charger)
             
             # Filter chargers using AI Confidence Score > 85%
             high_confidence_chargers = optimizer.filter_high_confidence_chargers(all_chargers_on_route)
             
             # Run simulation using real geometry waypoints and pre-fetched chargers
-            simulator = Simulator(client)
+            simulator = Simulator(None)
             # The simulator needs [(lat, lng)] or [(lat, lng, ele)]
             route_tuples = []
             for pt in route_geometry:
