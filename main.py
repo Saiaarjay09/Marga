@@ -11,36 +11,16 @@ def cached_geocode(city_name: str):
     """Cached wrapper around ArcGIS geocoder — never looks up the same city twice."""
     return get_coords_from_city(city_name)
 
-@st.cache_data(ttl=300)
 def fetch_highway_chargers(route_bounds=None):
-    """
-    Primary Data Provider: IONAGE Developer Network (India Hub)
-    Fetches real-time, verified public DC charging endpoints across Indian highway networks.
-    """
-    url = "https://api.ionage.in/v1/public/chargers/discover"
-    headers = {
-        "Accept": "application/json",
-        "X-API-Key": st.secrets.get("IONAGE_API_KEY", "DEMO_KEY_INDIA")
-    }
+    import json
+    import os
     try:
-        response = requests.get(url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            raw_data = response.json()
-            formatted_chargers = []
-            for item in raw_data.get("data", []):
-                formatted_chargers.append({
-                    "ID": item.get("id"),
-                    "AddressInfo": {
-                        "Title": item.get("name", "EV Fast Charger"),
-                        "Latitude": float(item.get("latitude")),
-                        "Longitude": float(item.get("longitude")),
-                        "AddressLine1": item.get("address", "Highway Corridor")
-                    },
-                    "Connections": [{"PowerKW": item.get("max_power_kw", 50)}]
-                })
-            return formatted_chargers
+        path = "every_charger_india.json"
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
         return []
-    except requests.exceptions.RequestException:
+    except Exception:
         return []
 
 # --- UI Configuration ---
@@ -362,7 +342,12 @@ if "routes" in st.session_state and st.session_state["routes"]:
             
             if not high_confidence_chargers:
                 st.warning("⚠️ No Compatible DC Fast Chargers Detected on This Route.")
-                st.info("💡 **Developer Notice:** The temporary IONAGE sandbox demo environment may have restricted data access for this specific highway corridor. Grab a production developer API key from the IONAGE portal to scan all 29,000+ real-time Indian infrastructure points!")
+                st.info(
+                    "💡 **System Optimization Notice:** Your app is currently reading coordinates natively from your "
+                    "dynamically synced national database (`every_charger_india.json`). If this is a newly opened "
+                    "highway corridor, open your local terminal, run `python update_registry.py` to pull the latest "
+                    "live over-the-air infrastructure updates, and push the commit to refresh the cloud map pins."
+                )
                 st.stop()
             elif not route_tuples:
                 st.error("Route geometry is empty or unparsed.")
