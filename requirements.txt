@@ -4,3 +4,4 @@ pydeck
 google-genai
 polyline
 streamlit-geolocation
+python-dotenv
