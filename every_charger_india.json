@@ -1,7 +1,48 @@
 {
-  "last_updated": "2026-09-19T07:40:54.721601+00:00",
-  "count": 1965,
+  "last_updated": "2026-09-20T08:07:56.269725+00:00",
+  "count": 1966,
   "chargers": [
+    {
+      "ID": 509422,
+      "AddressInfo": {
+        "Title": "Narketpally - Addanki - Medarametla Road",
+        "Latitude": 16.890620274310365,
+        "Longitude": 79.56120562803494,
+        "AddressLine1": "Narketpally - Addanki - Medarametla Road"
+      },
+      "Connections": [
+        {
+          "ID": 876893,
+          "ConnectionTypeID": 0,
+          "StatusTypeID": 50,
+          "LevelID": 3,
+          "PowerKW": 180,
+          "CurrentTypeID": 30,
+          "Quantity": 2
+        },
+        {
+          "ID": 876894,
+          "ConnectionTypeID": 0,
+          "StatusTypeID": 50,
+          "LevelID": 3,
+          "PowerKW": 120,
+          "CurrentTypeID": 30,
+          "Quantity": 2
+        },
+        {
+          "ID": 876895,
+          "ConnectionTypeID": 0,
+          "StatusTypeID": 50,
+          "LevelID": 3,
+          "PowerKW": 60,
+          "CurrentTypeID": 30,
+          "Quantity": 2
+        }
+      ],
+      "OperatorInfo": {},
+      "SubmissionStatus": {},
+      "StatusType": {}
+    },
     {
       "ID": 508929,
       "AddressInfo": {
