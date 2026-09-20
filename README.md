@@ -29,7 +29,7 @@ brochure range, then picks charging stops, gives each one a backup, and avoids s
 ## Run it yourself
 
 ```bash
-git clone https://github.com/Saiaarjay09/ev-copilot.git marga && cd marga
+git clone https://github.com/Saiaarjay09/Marga.git marga && cd marga
 deploy/install.sh              # venv + dependencies + start-at-login service on macOS
 ```
 
