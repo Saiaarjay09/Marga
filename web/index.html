@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marga · EV trips that finish</title>
+<meta name="description" content="Marga plans EV road trips in India using real physics (drag, hills, wind, weather) instead of brochure range, with charging stops and backups.">
+<meta name="theme-color" content="#F6F1E9">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script id="boot">if(location.pathname.length>1&&!location.pathname.endsWith('/')&&!/\.[a-z0-9]+$/i.test(location.pathname))location.replace(location.pathname+'/'+location.search+location.hash)</script>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="map" aria-label="Trip map"></div>
+
+<aside id="panel" class="panel" aria-label="Trip planner">
+  <button class="sheet-handle" id="sheet-handle" aria-label="Expand or collapse planner"><span></span></button>
+
+  <header class="brand">
+    <a class="logo" href="./" aria-label="Marga home">
+      <svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true">
+        <rect width="32" height="32" rx="10" class="logo-bg"/>
+        <path d="M7.5 23V14.5a4.25 4.25 0 0 1 8.5 0V23m0-8.5a4.25 4.25 0 0 1 8.5 0V23" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="24.5" cy="8" r="2.6" class="logo-dot"/>
+      </svg>
+      <span class="wordmark">marga</span><span class="devanagari" lang="hi">मार्ग</span>
+    </a>
+    <button class="icon-btn" id="theme-toggle" aria-label="Switch colour theme" title="Switch theme"></button>
+  </header>
+
+  <div id="peek-summary" class="peek-summary" hidden></div>
+
+  <div class="panel-scroll" id="panel-scroll">
+    <section id="intro" class="intro">
+      <h1>Plan the EV trip<br>you can actually finish.</h1>
+      <p>Range from physics: drag, hills, wind and weather for your exact car, not the brochure number. Charging stops come with backups, and stations reported broken are skipped.</p>
+    </section>
+
+    <form id="trip-form" autocomplete="off" novalidate>
+      <section class="card" aria-labelledby="h-where">
+        <h2 id="h-where" class="card-title">Where to</h2>
+        <div class="places">
+          <div class="place">
+            <span class="pin pin-start" aria-hidden="true"></span>
+            <div class="combo" data-role="start">
+              <input id="start-input" type="text" placeholder="Starting from" role="combobox" aria-expanded="false" aria-controls="start-list" aria-autocomplete="list" aria-label="Start location" maxlength="80">
+              <ul id="start-list" class="combo-list" role="listbox" hidden></ul>
+            </div>
+            <button type="button" class="icon-btn small" id="locate-btn" aria-label="Use my location" title="Use my location"></button>
+          </div>
+          <button type="button" class="swap-btn" id="swap-btn" aria-label="Swap start and destination" title="Swap"></button>
+          <div class="place">
+            <span class="pin pin-end" aria-hidden="true"></span>
+            <div class="combo" data-role="end">
+              <input id="end-input" type="text" placeholder="Going to" role="combobox" aria-expanded="false" aria-controls="end-list" aria-autocomplete="list" aria-label="Destination" maxlength="80">
+              <ul id="end-list" class="combo-list" role="listbox" hidden></ul>
+            </div>
+          </div>
+        </div>
+        <div class="examples" id="examples" aria-label="Example trips"></div>
+      </section>
+
+      <section class="card" aria-labelledby="h-car">
+        <h2 id="h-car" class="card-title">Your car</h2>
+        <div class="picker">
+          <button type="button" id="car-button" class="car-button" aria-haspopup="listbox" aria-expanded="false">
+            <span class="car-name" id="car-name">Loading cars…</span>
+            <span class="car-meta" id="car-meta"></span>
+          </button>
+          <div id="car-pop" class="car-pop" hidden>
+            <input id="car-search" type="search" placeholder="Search 50+ Indian EVs" aria-label="Search cars" maxlength="40">
+            <ul id="car-list" role="listbox" aria-label="Cars"></ul>
+          </div>
+        </div>
+        <dl class="spec-grid" id="spec-grid"></dl>
+        <button type="button" class="link-btn" id="tune-toggle" aria-expanded="false" aria-controls="tune">
+          <span>Fine-tune the physics</span><span class="chev" aria-hidden="true"></span>
+        </button>
+        <div id="tune" class="tune" hidden></div>
+      </section>
+
+      <section class="card" aria-labelledby="h-drive">
+        <h2 id="h-drive" class="card-title">How you drive</h2>
+        <div class="seg" id="style-seg" role="radiogroup" aria-label="Driving style"></div>
+        <p class="hint" id="style-hint"></p>
+
+        <label class="slider-row" for="soc-input">
+          <span>Starting charge</span><output id="soc-out">100%</output>
+          <input id="soc-input" type="range" min="20" max="100" step="5" value="100">
+        </label>
+        <label class="slider-row" for="buffer-input">
+          <span>Arrive with at least</span><output id="buffer-out">15%</output>
+          <input id="buffer-input" type="range" min="5" max="35" step="1" value="15">
+        </label>
+        <label class="switch-row" for="avoid-input">
+          <span><strong>Skip stations reported down</strong><small>Uses the daily health check</small></span>
+          <input id="avoid-input" type="checkbox" role="switch" checked>
+          <i class="switch" aria-hidden="true"></i>
+        </label>
+      </section>
+
+      <div class="cta-bar" id="cta-bar">
+        <button type="submit" class="cta" id="plan-btn"><span id="plan-label">Plan my trip</span></button>
+      </div>
+    </form>
+
+    <div id="status" class="status" role="status" aria-live="polite" hidden></div>
+    <div id="results" class="results" hidden></div>
+
+    <footer class="foot" id="foot"></footer>
+  </div>
+</aside>
+
+<div class="legend" id="legend" aria-label="Map legend">
+  <span><i class="lg lg-route"></i>Route</span>
+  <span><i class="lg lg-stop"></i>Stop</span>
+  <span><i class="lg lg-backup"></i>Backup</span>
+  <span><i class="lg lg-dot"></i>Charger</span>
+  <span><i class="lg lg-down"></i>Down</span>
+</div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script type="module" src="js/app.js"></script>
+<noscript><div class="noscript">Marga needs JavaScript to draw the map and plan your trip.</div></noscript>
+</body>
+</html>

@@ -65,39 +65,60 @@ def hvac_load_kw(ambient_temp_c: float) -> float:
     return base_accessory_kw
 
 
-def segment_energy_wh(spec: VehicleSpec, cond: SegmentConditions, driver_style: str = "Normal") -> float:
-    """Battery-side energy (Wh, can be negative under strong regen) for one route segment."""
+def segment_energy_parts(spec: VehicleSpec, cond: SegmentConditions, driver_style: str = "Normal") -> dict:
+    """
+    Battery-side energy (Wh) for one segment, split by cause. The parts always
+    sum to the segment total: aero (still air), wind (extra/less drag from
+    head/tailwind), rolling, hills (net climb minus descent credit), climate
+    (HVAC + accessories) and style (extra from aggressive/eco driving).
+    """
+    parts = {"aero": 0.0, "wind": 0.0, "rolling": 0.0, "hills": 0.0, "climate": 0.0, "style": 0.0}
     if cond.distance_km <= 0:
-        return 0.0
+        return parts
 
     distance_m = cond.distance_km * 1000.0
-    v_ms = (cond.avg_speed_kmh / 3.6) + (cond.headwind_kmh / 3.6)
-    v_ms_signed_sq = math.copysign(v_ms * v_ms, v_ms)
+    v_car = cond.avg_speed_kmh / 3.6
+    v_rel = v_car + (cond.headwind_kmh / 3.6)
 
     rho = air_density(cond.altitude_m)
-    f_aero = 0.5 * rho * spec.drag_coefficient * spec.frontal_area_m2 * v_ms_signed_sq
+    k_aero = 0.5 * rho * spec.drag_coefficient * spec.frontal_area_m2
+    f_aero_still = k_aero * v_car * v_car
+    f_aero_wind = k_aero * math.copysign(v_rel * v_rel, v_rel) - f_aero_still
 
-    grade = cond.elevation_gain_m / distance_m
-    theta = math.atan(grade)
+    theta = math.atan(cond.elevation_gain_m / distance_m)
     f_roll = spec.rolling_resistance * spec.mass_kg * G * math.cos(theta)
     f_grade = spec.mass_kg * G * math.sin(theta)
 
-    mechanical_work_j = (f_aero + f_roll + f_grade) * distance_m
+    work_wh = {
+        "aero": f_aero_still * distance_m / 3600.0,
+        "wind": f_aero_wind * distance_m / 3600.0,
+        "rolling": f_roll * distance_m / 3600.0,
+        "hills": f_grade * distance_m / 3600.0,
+    }
+    total_work_wh = sum(work_wh.values())
     style_multiplier = DRIVER_STYLE_MULTIPLIERS.get(driver_style, 1.0)
 
-    if mechanical_work_j >= 0:
-        propulsion_wh = (mechanical_work_j / 3600.0) / spec.mre_pct * style_multiplier
+    if total_work_wh >= 0:
+        scale = 1.0 / spec.mre_pct
+        for key, value in work_wh.items():
+            parts[key] = value * scale
+        parts["style"] = sum(parts[k] for k in work_wh) * (style_multiplier - 1.0)
     else:
-        time_s = distance_m / (cond.avg_speed_kmh / 3.6) if cond.avg_speed_kmh > 0 else 0.0
-        mechanical_power_w = (mechanical_work_j / time_s) if time_s > 0 else mechanical_work_j
-        clamped_power_w = max(mechanical_power_w, -MAX_REGEN_POWER_W)  # excess is wasted as friction-brake heat
-        clamped_work_j = clamped_power_w * time_s if time_s > 0 else mechanical_work_j
-        propulsion_wh = (clamped_work_j / 3600.0) * REGEN_EFFICIENCY
+        time_s = distance_m / v_car if v_car > 0 else 0.0
+        power_w = (total_work_wh * 3600.0 / time_s) if time_s > 0 else total_work_wh * 3600.0
+        clamped_wh = max(power_w, -MAX_REGEN_POWER_W) * time_s / 3600.0 if time_s > 0 else total_work_wh
+        scale = (clamped_wh * REGEN_EFFICIENCY) / total_work_wh
+        for key, value in work_wh.items():
+            parts[key] = value * scale
 
     time_hours = cond.distance_km / cond.avg_speed_kmh if cond.avg_speed_kmh > 0 else 0.0
-    aux_wh = hvac_load_kw(cond.ambient_temp_c) * 1000.0 * time_hours
+    parts["climate"] = hvac_load_kw(cond.ambient_temp_c) * 1000.0 * time_hours
+    return parts
 
-    return propulsion_wh + aux_wh
+
+def segment_energy_wh(spec: VehicleSpec, cond: SegmentConditions, driver_style: str = "Normal") -> float:
+    """Battery-side energy (Wh, can be negative under strong regen) for one route segment."""
+    return sum(segment_energy_parts(spec, cond, driver_style).values())
 
 
 def battery_usable_wh(spec: VehicleSpec, safety_buffer_pct: float = 0.0) -> float:

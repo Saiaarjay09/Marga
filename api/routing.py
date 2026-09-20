@@ -1,38 +1,7 @@
 import math
 import requests
 import polyline
-from typing import Tuple, Optional, Dict, Any, List
-
-def get_coords_from_city(city_name: str) -> Tuple[Optional[float], Optional[float]]:
-    """
-    Geocodes a city name using the ArcGIS endpoint, strictly locked to India bounds.
-    No hardcoding, purely dynamic input with geographical safety rules.
-    """
-    if not city_name:
-        return None, None
-        
-    # Adding sourceCountry=IND forces ArcGIS to ONLY search inside India, completely eliminating the Africa/Europe bug
-    url = f"https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine={city_name}&sourceCountry=IND&maxLocations=1"
-    
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get('candidates') and len(data['candidates']) > 0:
-            location = data['candidates'][0]['location']
-            
-            # y is Latitude, x is Longitude
-            lat = float(location['y'])
-            lon = float(location['x'])
-            
-            print(f"[GEOCODE MATCH] Input: {city_name} -> Resolved inside India to: Lat {lat}, Lng {lon}")
-            return lat, lon
-            
-    except Exception as e:
-        print(f"Error geocoding city {city_name}: {e}")
-        
-    return None, None
+from typing import Tuple, Dict, Any, List
 
 def _calculate_haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculates the great-circle distance between two points on the Earth's surface in km."""
@@ -61,7 +30,7 @@ def _generate_straight_line_fallback(start_coords: Tuple[float, float], end_coor
         # Linear interpolation
         lat = start_lat + (end_lat - start_lat) * fraction
         lng = start_lng + (end_lng - start_lng) * fraction
-        # Appending [lng, lat] for PyDeck PathLayer
+        # [lng, lat]
         geometry.append([lng, lat])
         
     distance_km = _calculate_haversine_distance(start_lat, start_lng, end_lat, end_lng)
@@ -91,7 +60,7 @@ def get_osrm_route(start_coords: Tuple[float, float], end_coords: Tuple[float, f
     
     endpoints = [
         # Primary: OSRM Server 1
-        f"http://router.project-osrm.org/route/v1/driving/{coords_string}",
+        f"https://router.project-osrm.org/route/v1/driving/{coords_string}",
         # Secondary: Alternative Free OSRM Mirror
         f"https://routing.openstreetmap.de/routed-car/route/v1/driving/{coords_string}"
     ]
@@ -114,7 +83,7 @@ def get_osrm_route(start_coords: Tuple[float, float], end_coords: Tuple[float, f
                     encoded_polyline = route["geometry"]
                     # polyline.decode returns [(lat, lng)]
                     decoded = polyline.decode(encoded_polyline)
-                    # Convert to [lng, lat] for PyDeck PathLayer
+                    # Convert to [lng, lat]
                     geometry = [[pt[1], pt[0]] for pt in decoded]
                     
                     routes.append({

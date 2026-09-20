@@ -13,9 +13,8 @@ https://openchargemap.org/site/developerinfo). It is intentionally never
 hardcoded here -- an earlier version of this script had a real key
 committed to git, which is a leaked secret the moment a repo is public.
 
-Usage:
-    OCM_API_KEY=xxxx python refresh_chargers.py
-or with a .env file (see .env.example) and python-dotenv installed.
+The Marga server calls run_refresh() itself once a day, so you normally never
+run this by hand. Manual run:  python refresh_chargers.py
 """
 
 from __future__ import annotations
@@ -81,34 +80,37 @@ def fetch_live_india_chargers(api_key: str) -> list:
     return master_list
 
 
-def main() -> None:
-    api_key = os.environ.get("OCM_API_KEY")
+def run_refresh(api_key: str | None = None, path: str = REGISTRY_PATH) -> bool:
+    """Re-pull the national registry. Returns True if the file was rewritten."""
+    api_key = api_key or os.environ.get("OCM_API_KEY")
     if not api_key:
-        print("ERROR: OCM_API_KEY is not set. Get a free key at "
-              "https://openchargemap.org/site/developerinfo and export it, "
-              "or put it in a .env file (see .env.example).")
-        raise SystemExit(1)
+        print("OCM_API_KEY is not set. Get a free key at https://openchargemap.org/site/developerinfo "
+              "and put it in .env (see .env.example).")
+        return False
 
     try:
         master_list = fetch_live_india_chargers(api_key)
     except requests.exceptions.RequestException as e:
         print(f"Network error while refreshing chargers: {e}")
-        raise SystemExit(1)
+        return False
 
     if not master_list:
-        print("Refresh returned zero valid records -- keeping the existing file untouched.")
-        raise SystemExit(1)
+        print("Refresh returned zero valid records; keeping the existing file untouched.")
+        return False
 
     payload = {
         "last_updated": datetime.now(timezone.utc).isoformat(),
         "count": len(master_list),
         "chargers": master_list,
     }
-    with open(REGISTRY_PATH, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f)
+    os.replace(tmp_path, path)  # atomic, so a reader never sees a half-written file
 
-    print(f"Wrote {len(master_list)} chargers to {REGISTRY_PATH}.")
+    print(f"Wrote {len(master_list)} chargers to {path}.")
+    return True
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(0 if run_refresh() else 1)

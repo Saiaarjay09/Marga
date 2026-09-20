@@ -1,7 +1,7 @@
-streamlit
+fastapi
+uvicorn[standard]
 requests
-pydeck
-google-genai
 polyline
-streamlit-geolocation
+numpy
 python-dotenv
+google-genai
