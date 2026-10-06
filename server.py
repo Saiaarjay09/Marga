@@ -7,8 +7,6 @@ Run:  uvicorn server:asgi_app --host 127.0.0.1 --port 8090
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import os
 import re
 import threading
@@ -554,17 +552,20 @@ def api_weather_now(request: Request, lat: float, lng: float):
 def _index_response() -> HTMLResponse:
     with open(os.path.join(WEB_DIR, "index.html"), "r", encoding="utf-8") as f:
         html = f.read()
-    boot = re.search(r'<script id="boot">(.*?)</script>', html, re.S)
-    script_hash = ""
-    if boot:
-        digest = hashlib.sha256(boot.group(1).encode()).digest()
-        script_hash = f" 'sha256-{base64.b64encode(digest).decode()}'"
+    # The frontend (web/js/api.js) now does routing, elevation, weather and
+    # geocoding by calling these services directly from the browser -- the
+    # same free, CORS-enabled APIs this server used to proxy -- so it works
+    # unchanged whether served here or as a static GitHub Pages site. The
+    # header below just needs to allow those same connections; index.html
+    # carries an identical <meta> CSP for the no-server deployment.
     csp = (
         "default-src 'self'; "
-        f"script-src 'self'{script_hash}; "
+        "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: https://server.arcgisonline.com; "
-        "connect-src 'self'; font-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+        "connect-src 'self' https://geocode.arcgis.com https://router.project-osrm.org "
+        "https://routing.openstreetmap.de https://api.open-meteo.com; "
+        "font-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
     )
     return HTMLResponse(html, headers={"Content-Security-Policy": csp, "Cache-Control": "no-cache"})
 

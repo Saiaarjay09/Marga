@@ -2,10 +2,10 @@
 
 ## Open the site
 
-**https://haven.taila6d3cb.ts.net/marga/**
+**https://saiaarjay09.github.io/Marga/**
 
-It works in any modern browser on a phone or a computer, and needs no sign-up or install. (It runs on a home
-computer, so if it ever does not load, it may simply be switched off or offline. Try again later.)
+It works in any modern browser on a phone or a computer, and needs no sign-up or install. It's hosted on GitHub
+Pages, so it's always on — nobody's computer needs to be switched on for the site to work.
 
 ![The Marga home screen](img/01-home.jpg)
 
@@ -187,10 +187,11 @@ Tip: in your phone's browser menu, choose **Add to Home Screen** to keep a short
 - **Charger status is inferred.** "Reported working" means the operator and recent driver check-ins do not suggest a
   problem. It cannot promise a free plug. The backup is there for a reason.
 - **"Not checked yet"** means that station has not been through the daily health check (yet).
-- **Your privacy.** Marga has no accounts and does not save your trips: routes are held in the server's memory
-  for an hour and then discarded. Like any website, the server keeps ordinary access logs (such as your IP address and
-  the pages requested). Your car and settings are saved only in your own browser. Your location is used only if you
-  press the target button, and only to fill in the start box.
+- **Your privacy.** Marga has no accounts and does not save your trips — the whole plan is computed in your own
+  browser and never sent anywhere as a trip. Planning one does call a few free public services directly from your
+  browser (for roads, elevation, weather and place search), each of which sees your IP address and query the same
+  way any website visit would. Your car and settings are saved only in your own browser. Your location is used only
+  if you press the target button, and only to fill in the start box.
 
 ---
 

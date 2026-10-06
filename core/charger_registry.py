@@ -30,8 +30,8 @@ import json
 import os
 from typing import Any, Dict, List, Tuple
 
-REGISTRY_PATH = "every_charger_india.json"
-HEALTH_PATH = "charger_health.json"
+REGISTRY_PATH = "web/data/every_charger_india.json"
+HEALTH_PATH = "web/data/charger_health.json"
 
 
 def load_registry(path: str = REGISTRY_PATH) -> Tuple[List[Dict[str, Any]], str | None]:

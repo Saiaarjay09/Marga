@@ -31,7 +31,7 @@ try:
 except ImportError:
     pass
 
-REGISTRY_PATH = "every_charger_india.json"
+REGISTRY_PATH = "web/data/every_charger_india.json"  # served directly by both server.py and GitHub Pages
 OCM_BASE_URL = "https://api.openchargemap.io/v3/poi"
 
 
